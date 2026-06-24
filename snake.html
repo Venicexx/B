@@ -206,12 +206,410 @@ canvas {
 </div>
 
 <script>
-// ========== 游戏引擎 ==========
-// 后续 Task 在此填充
-function init() {
-  console.log('🐍 贪吃蛇已加载');
+// ========== 游戏配置 ==========
+const GRID_SIZE = 20;        // 20×20 网格
+const CELL_SIZE = 20;        // 每格 20px
+const TICK_BASE = 150;       // 初始间隔 (ms)
+const TICK_MIN = 60;         // 最快间隔
+const SPEED_STEP = 15;       // 每 5 个食物加速幅度
+const FOOD_PER_SPEED = 5;    // 多少个食物加速一次
+const POINTS_PER_FOOD = 10;  // 每个食物分数
+
+// ========== DOM 引用 ==========
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highScore');
+const overlay = document.getElementById('overlay');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+
+// ========== 游戏状态 ==========
+let state = {};
+
+// ========== 工具函数 ==========
+function loadHighScore() {
+  try { return parseInt(localStorage.getItem('snakeHighScore') || '0', 10); }
+  catch { return 0; }
 }
-init();
+function saveHighScore(score) {
+  try { localStorage.setItem('snakeHighScore', String(score)); } catch {}
+}
+
+// ========== 初始化状态 ==========
+function initState() {
+  const mid = Math.floor(GRID_SIZE / 2);
+  state = {
+    status: 'waiting',       // waiting | playing | paused | gameover
+    snake: [
+      { x: mid, y: mid },    // 头
+      { x: mid - 1, y: mid },
+      { x: mid - 2, y: mid },
+    ],
+    direction:  { dx: 1, dy: 0 },
+    nextDir:    { dx: 1, dy: 0 },
+    food:       { x: 0, y: 0 },
+    score:      0,
+    highScore:  loadHighScore(),
+    speed:      TICK_BASE,
+    eatCount:   0,
+    timer:      null,
+  };
+  spawnFood();
+  updateUI();
+}
+
+// ========== 食物生成 ==========
+function spawnFood() {
+  const total = GRID_SIZE * GRID_SIZE;
+  if (state.snake.length >= total) {
+    // 蛇已占满 → 胜利（实践中几乎不可能）
+    state.food = { x: -1, y: -1 };
+    return;
+  }
+  // 收集所有空格
+  const occupied = new Set(state.snake.map(p => `${p.x},${p.y}`));
+  let free = [];
+  for (let i = 0; i < GRID_SIZE; i++) {
+    for (let j = 0; j < GRID_SIZE; j++) {
+      if (!occupied.has(`${i},${j}`)) free.push({ x: i, y: j });
+    }
+  }
+  if (free.length > 0) {
+    state.food = free[Math.floor(Math.random() * free.length)];
+  }
+}
+
+// ========== 碰撞检测 ==========
+function checkCollision(head) {
+  // 撞墙
+  if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+    return true;
+  }
+  // 撞自身（跳过蛇头自身）
+  for (let i = 1; i < state.snake.length; i++) {
+    if (state.snake[i].x === head.x && state.snake[i].y === head.y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ========== 更新逻辑 ==========
+function update() {
+  state.direction = { ...state.nextDir };
+
+  const head = state.snake[0];
+  const newHead = {
+    x: head.x + state.direction.dx,
+    y: head.y + state.direction.dy,
+  };
+
+  // 碰撞检测
+  if (checkCollision(newHead)) {
+    gameOver();
+    return;
+  }
+
+  // 移动（头插入）
+  state.snake.unshift(newHead);
+
+  // 检查是否吃到食物
+  if (newHead.x === state.food.x && newHead.y === state.food.y) {
+    state.score += POINTS_PER_FOOD;
+    state.eatCount++;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      saveHighScore(state.highScore);
+    }
+    // 加速
+    if (state.eatCount % FOOD_PER_SPEED === 0) {
+      state.speed = Math.max(TICK_MIN, state.speed - SPEED_STEP);
+      restartTimer();
+    }
+    spawnFood();
+    updateUI();
+  } else {
+    // 没吃到 → 移除尾部
+    state.snake.pop();
+  }
+}
+
+// ========== 游戏结束 ==========
+function gameOver() {
+  state.status = 'gameover';
+  stopTimer();
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div style="font-size:32px;">💥</div>
+    <div style="margin-top:8px;">游戏结束</div>
+    <div class="overlay-sub">得分: ${state.score} 分 · 点击重新开始</div>
+  `;
+}
+
+// ========== 计时器管理 ==========
+function startTimer() {
+  stopTimer();
+  state.timer = setInterval(() => {
+    if (state.status === 'playing') {
+      update();
+      draw();
+    }
+  }, state.speed);
+}
+function stopTimer() {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+}
+function restartTimer() {
+  if (state.status === 'playing') {
+    stopTimer();
+    startTimer();
+  }
+}
+
+// ========== UI 更新 ==========
+function updateUI() {
+  scoreEl.textContent = state.score;
+  highScoreEl.textContent = state.highScore;
+}
+
+// ========== Canvas 渲染 ==========
+function draw() {
+  ctx.clearRect(0, 0, 400, 400);
+
+  // 画网格
+  ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= GRID_SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * CELL_SIZE, 0);
+    ctx.lineTo(i * CELL_SIZE, 400);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * CELL_SIZE);
+    ctx.lineTo(400, i * CELL_SIZE);
+    ctx.stroke();
+  }
+
+  // 画食物
+  if (state.food.x >= 0) {
+    const fx = state.food.x * CELL_SIZE + CELL_SIZE / 2;
+    const fy = state.food.y * CELL_SIZE + CELL_SIZE / 2;
+    // 果柄（叶子）
+    ctx.beginPath();
+    ctx.ellipse(fx + 4, fy - 7, 4, 3, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#66bb6a';
+    ctx.fill();
+    // 果子
+    ctx.beginPath();
+    ctx.arc(fx, fy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff5252';
+    ctx.fill();
+    ctx.shadowColor = 'rgba(255,82,82,0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // 高光
+    ctx.beginPath();
+    ctx.arc(fx - 2, fy - 2, 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fill();
+  }
+
+  // 画蛇
+  const len = state.snake.length;
+  for (let i = 0; i < len; i++) {
+    const seg = state.snake[i];
+    const x = seg.x * CELL_SIZE;
+    const y = seg.y * CELL_SIZE;
+    const hue = (i * 15 + state.eatCount * 10) % 360;
+
+    // 圆角蛇段
+    const padding = 1;
+    const radius = 4;
+    ctx.beginPath();
+    ctx.roundRect(x + padding, y + padding, CELL_SIZE - padding * 2, CELL_SIZE - padding * 2, radius);
+    ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+    ctx.fill();
+
+    // 蛇头 — 画眼睛
+    if (i === 0) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 6, 2, 0, Math.PI * 2);
+      ctx.arc(x + 14, y + 6, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#333';
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 6, 1, 0, Math.PI * 2);
+      ctx.arc(x + 14, y + 6, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Canvas roundRect polyfill（Safari 需要）
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    return this;
+  };
+}
+
+// ========== 游戏控制 ==========
+function startGame() {
+  if (state.status === 'waiting' || state.status === 'gameover') {
+    state.status = 'playing';
+    overlay.classList.add('hidden');
+    startTimer();
+  }
+}
+
+function resetGame() {
+  stopTimer();
+  initState();
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div>🐍 按任意方向键开始</div>
+    <div class="overlay-sub">或滑动屏幕</div>
+  `;
+  draw();
+}
+
+function togglePause() {
+  if (state.status === 'playing') {
+    state.status = 'paused';
+    stopTimer();
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <div>⏸️ 已暂停</div>
+      <div class="overlay-sub">按 P 键或点击继续</div>
+    `;
+    pauseBtn.textContent = '▶️ 继续';
+  } else if (state.status === 'paused') {
+    state.status = 'playing';
+    overlay.classList.add('hidden');
+    startTimer();
+    pauseBtn.textContent = '⏸️ 暂停';
+  }
+}
+
+// ========== 输入处理（键盘） ==========
+document.addEventListener('keydown', (e) => {
+  const key = e.key;
+  // 防止方向键滚动页面
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(key)) {
+    e.preventDefault();
+  }
+
+  // 暂停/继续 (P / Space)
+  if (key === 'p' || key === 'P' || key === ' ') {
+    if (state.status === 'playing' || state.status === 'paused') {
+      togglePause();
+    } else if (state.status === 'gameover') {
+      resetGame();
+    }
+    return;
+  }
+
+  // 方向键 & WASD
+  const dirMap = {
+    'ArrowUp':    { dx: 0, dy: -1 },  'w': { dx: 0, dy: -1 },
+    'ArrowDown':  { dx: 0, dy: 1 },   's': { dx: 0, dy: 1 },
+    'ArrowLeft':  { dx: -1, dy: 0 },  'a': { dx: -1, dy: 0 },
+    'ArrowRight': { dx: 1, dy: 0 },   'd': { dx: 1, dy: 0 },
+  };
+  const nd = dirMap[key];
+  if (nd) {
+    // 首次按键启动游戏
+    if (state.status === 'waiting') { startGame(); }
+    // 不允许 180° 掉头
+    if (state.status === 'playing') {
+      const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+      if (!isOpposite) {
+        state.nextDir = nd;
+      }
+    }
+  }
+});
+
+// ========== 按钮事件 ==========
+restartBtn.addEventListener('click', resetGame);
+pauseBtn.addEventListener('click', togglePause);
+overlay.addEventListener('click', startGame);
+
+// ========== 触控滑动 ==========
+let touchStartX = 0, touchStartY = 0;
+canvas.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: true });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // 最小滑动阈值
+
+  if (state.status === 'waiting') { startGame(); }
+  if (state.status !== 'playing') return;
+
+  let nd;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    nd = dx > 0 ? { dx: 1, dy: 0 } : { dx: -1, dy: 0 };
+  } else {
+    nd = dy > 0 ? { dx: 0, dy: 1 } : { dx: 0, dy: -1 };
+  }
+  const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+  if (!isOpposite) {
+    state.nextDir = nd;
+  }
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: false });
+
+// ========== 触屏检测 → 显示方向按钮 ==========
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  document.getElementById('dpad').style.display = 'block';
+}
+
+// 方向按钮事件（委托监听）
+document.getElementById('dpad').addEventListener('click', (e) => {
+  const btn = e.target.closest('.dpad-btn');
+  if (!btn) return;
+  const dirMap = {
+    up:    { dx: 0, dy: -1 },
+    down:  { dx: 0, dy: 1 },
+    left:  { dx: -1, dy: 0 },
+    right: { dx: 1, dy: 0 },
+  };
+  const nd = dirMap[btn.dataset.dir];
+  if (!nd) return;
+
+  if (state.status === 'waiting') { startGame(); }
+  if (state.status !== 'playing') return;
+
+  const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+  if (!isOpposite) {
+    state.nextDir = nd;
+  }
+});
+
+// ========== 启动 ==========
+initState();
+draw();
 </script>
 </body>
 </html>
