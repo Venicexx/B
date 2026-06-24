@@ -1,0 +1,748 @@
+# 贪吃蛇小游戏 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 创建一个单 HTML 文件的贪吃蛇小游戏，童趣可爱视觉风格，支持桌面键盘和移动端触控操作。
+
+**Architecture:** 单文件 `snake.html`，CSS/JS 全内嵌。Canvas 渲染 + Game Loop 模式驱动。核心状态为一个对象，包含蛇坐标数组、方向、食物、分数等。
+
+**Tech Stack:** HTML5 + CSS3 + Canvas API + 原生 JavaScript（零依赖）
+
+## Global Constraints
+
+- 全部代码在单个 `snake.html` 文件中，CSS 和 JS 内嵌
+- 视觉风格：童趣可爱（薄荷绿背景、彩虹蛇身、红果子食物、圆角卡片布局）
+- 支持键盘 ↑↓←→ / WASD 操控
+- 支持移动端触控滑动 + 浮动方向按钮
+- 速度每吃 5 个食物提升一次（间隔减 15ms），最低 60ms
+- 最高分通过 `localStorage` 持久化
+- Canvas 固定 400×400px，CSS 做 `max-width: 100%` 适配小屏
+- 适用于现代浏览器（Chrome/Firefox/Safari/Edge）
+- 底部签名：`开发者: 爸爸为你做的 ❤️`
+
+---
+
+### Task 1: HTML 骨架 + CSS 视觉
+
+**Files:**
+- Create: `E:\Claude Code(cursor)\snake.html`
+
+**Interfaces:**
+- Consumes: 设计文档中的视觉规范和布局
+- Produces: 完整 HTML+CSS 外壳，Canvas 和游戏区域已就位，JS 入口函数 `init()` 已声明并等待填充
+
+- [ ] **Step 1: 编写 HTML 骨架和 CSS 样式**
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐍 小蛇吃果子</title>
+<style>
+/* ===== 全局重置 & 背景 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  padding: 16px;
+}
+
+/* ===== 游戏卡片 ===== */
+.game-container {
+  background: #fff;
+  border-radius: 24px;
+  padding: 30px 24px 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+/* ===== 标题 & 分数 ===== */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+h1 {
+  font-size: 22px;
+  color: #2e7d32;
+  font-weight: 700;
+}
+.score-box {
+  background: #fff3e0;
+  padding: 6px 16px;
+  border-radius: 20px;
+  display: flex;
+  gap: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.score-box span { color: #e65100; }
+
+/* ===== Canvas 区 ===== */
+.canvas-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06);
+}
+canvas {
+  display: block;
+  width: 400px;
+  height: 400px;
+  max-width: 100%;
+  background: #f1f8e9;
+}
+
+/* ===== 按钮行 ===== */
+.btn-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.btn {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  touch-action: manipulation;
+}
+.btn:active { transform: scale(0.95); }
+.btn-green  { background: #4caf50; color: #fff; box-shadow: 0 3px 8px rgba(76,175,80,0.3); }
+.btn-orange { background: #ff9800; color: #fff; box-shadow: 0 3px 8px rgba(255,152,0,0.3); }
+
+/* ===== 方向按钮（移动端） ===== */
+.dpad {
+  display: none;  /* 默认隐藏，通过 JS 检测触屏后显示 */
+  margin-top: 16px;
+}
+.dpad-grid {
+  display: inline-grid;
+  grid-template-columns: 56px 56px 56px;
+  grid-template-rows: 56px 56px;
+  gap: 4px;
+  justify-content: center;
+}
+.dpad-btn {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: #a5d6a7;
+  color: #1b5e20;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  box-shadow: 0 3px 0 #81c784;
+  transition: transform 0.05s;
+}
+.dpad-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #81c784;
+}
+.dpad-empty { visibility: hidden; }
+
+/* ===== 覆盖层（等待/结束） ===== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(241,248,233,0.85);
+  backdrop-filter: blur(2px);
+  font-size: 20px;
+  font-weight: 600;
+  color: #2e7d32;
+  cursor: pointer;
+  transition: opacity 0.3s;
+}
+.overlay.hidden { opacity: 0; pointer-events: none; }
+.overlay-sub {
+  font-size: 14px;
+  font-weight: 400;
+  color: #558b2f;
+  margin-top: 8px;
+}
+
+/* ===== 底部签名 ===== */
+.footer {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #81c784;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 440px) {
+  .game-container { padding: 16px 12px; }
+  h1 { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<div class="game-container">
+  <div class="header">
+    <h1>🐍 小蛇吃果子</h1>
+    <div class="score-box">
+      <span id="score">0</span>
+      <span style="color:#999;font-weight:300;">|</span>
+      <span>🏆 <span id="highScore">0</span></span>
+    </div>
+  </div>
+
+  <div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <!-- 覆盖层 -->
+    <div id="overlay" class="overlay">
+      <div>🐍 按任意方向键开始</div>
+      <div class="overlay-sub">或滑动屏幕</div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-green" id="restartBtn">🔄 重新开始</button>
+    <button class="btn btn-orange" id="pauseBtn">⏸️ 暂停</button>
+  </div>
+
+  <!-- 移动端方向按钮 -->
+  <div class="dpad" id="dpad">
+    <div class="dpad-grid">
+      <div class="dpad-empty"></div>
+      <button class="dpad-btn" data-dir="up">↑</button>
+      <div class="dpad-empty"></div>
+      <button class="dpad-btn" data-dir="left">←</button>
+      <button class="dpad-btn" data-dir="down">↓</button>
+      <button class="dpad-btn" data-dir="right">→</button>
+    </div>
+  </div>
+
+  <div class="footer">开发者: 爸爸为你做的 ❤️</div>
+</div>
+
+<script>
+// ========== 游戏引擎 ==========
+// 后续 Task 在此填充
+function init() {
+  console.log('🐍 贪吃蛇已加载');
+}
+init();
+</script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: 确认文件写入成功**
+
+在浏览器中打开 `snake.html`，验证页面渲染正确：绿色渐变背景、白色游戏卡片、Canvas 区域、按钮、底部签名可见。
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "E:\Claude Code(cursor)"
+git init . 2>/dev/null || true
+git add snake.html
+git commit -m "feat: add snake game HTML skeleton and CSS styles"
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 2: 游戏核心引擎（蛇、食物、碰撞、分数）
+
+**Files:**
+- Modify: `E:\Claude Code(cursor)\snake.html`（在 `<script>` 标签中填充完整游戏引擎）
+
+**Interfaces:**
+- Consumes: Task 1 的 HTML 骨架、Canvas 元素 `#gameCanvas`、覆盖层 `#overlay`、分数显示 `#score`、最高分 `#highScore`
+- Produces: 完整可玩的游戏（键盘操控），包含：
+  - `gameState` 对象（蛇、方向、食物、分数、状态）
+  - `gameLoop()` 定时循环
+  - `update()` 状态更新 + 碰撞检测
+  - `draw()` Canvas 渲染（童趣风格：圆角蛇段、红果子、网格）
+  - `generateFood()` 食物生成
+  - `resetGame()` 重置
+
+- [ ] **Step 1: 编写完整游戏引擎 JS 代码**
+
+替换 `<script>` 标签中的占位代码为以下完整引擎：
+
+```javascript
+// ========== 游戏配置 ==========
+const GRID_SIZE = 20;        // 20×20 网格
+const CELL_SIZE = 20;        // 每格 20px
+const TICK_BASE = 150;       // 初始间隔 (ms)
+const TICK_MIN = 60;         // 最快间隔
+const SPEED_STEP = 15;       // 每 5 个食物加速幅度
+const FOOD_PER_SPEED = 5;    // 多少个食物加速一次
+const POINTS_PER_FOOD = 10;  // 每个食物分数
+
+// ========== DOM 引用 ==========
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highScore');
+const overlay = document.getElementById('overlay');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+
+// ========== 游戏状态 ==========
+let state = {};
+
+// ========== 工具函数 ==========
+function loadHighScore() {
+  try { return parseInt(localStorage.getItem('snakeHighScore') || '0', 10); }
+  catch { return 0; }
+}
+function saveHighScore(score) {
+  try { localStorage.setItem('snakeHighScore', String(score)); } catch {}
+}
+
+// ========== 初始化状态 ==========
+function initState() {
+  const mid = Math.floor(GRID_SIZE / 2);
+  state = {
+    status: 'waiting',       // waiting | playing | paused | gameover
+    snake: [
+      { x: mid, y: mid },    // 头
+      { x: mid - 1, y: mid },
+      { x: mid - 2, y: mid },
+    ],
+    direction:  { dx: 1, dy: 0 },
+    nextDir:    { dx: 1, dy: 0 },
+    food:       { x: 0, y: 0 },
+    score:      0,
+    highScore:  loadHighScore(),
+    speed:      TICK_BASE,
+    eatCount:   0,
+    timer:      null,
+  };
+  spawnFood();
+  updateUI();
+}
+
+// ========== 食物生成 ==========
+function spawnFood() {
+  const total = GRID_SIZE * GRID_SIZE;
+  if (state.snake.length >= total) {
+    // 蛇已占满 → 胜利（实践中几乎不可能）
+    state.food = { x: -1, y: -1 };
+    return;
+  }
+  // 收集所有空格
+  const occupied = new Set(state.snake.map(p => `${p.x},${p.y}`));
+  let free = [];
+  for (let i = 0; i < GRID_SIZE; i++) {
+    for (let j = 0; j < GRID_SIZE; j++) {
+      if (!occupied.has(`${i},${j}`)) free.push({ x: i, y: j });
+    }
+  }
+  if (free.length > 0) {
+    state.food = free[Math.floor(Math.random() * free.length)];
+  }
+}
+
+// ========== 碰撞检测 ==========
+function checkCollision(head) {
+  // 撞墙
+  if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+    return true;
+  }
+  // 撞自身（跳过蛇头自身）
+  for (let i = 1; i < state.snake.length; i++) {
+    if (state.snake[i].x === head.x && state.snake[i].y === head.y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ========== 更新逻辑 ==========
+function update() {
+  state.direction = { ...state.nextDir };
+
+  const head = state.snake[0];
+  const newHead = {
+    x: head.x + state.direction.dx,
+    y: head.y + state.direction.dy,
+  };
+
+  // 碰撞检测
+  if (checkCollision(newHead)) {
+    gameOver();
+    return;
+  }
+
+  // 移动（头插入）
+  state.snake.unshift(newHead);
+
+  // 检查是否吃到食物
+  if (newHead.x === state.food.x && newHead.y === state.food.y) {
+    state.score += POINTS_PER_FOOD;
+    state.eatCount++;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      saveHighScore(state.highScore);
+    }
+    // 加速
+    if (state.eatCount % FOOD_PER_SPEED === 0) {
+      state.speed = Math.max(TICK_MIN, state.speed - SPEED_STEP);
+      restartTimer();
+    }
+    spawnFood();
+    updateUI();
+  } else {
+    // 没吃到 → 移除尾部
+    state.snake.pop();
+  }
+}
+
+// ========== 游戏结束 ==========
+function gameOver() {
+  state.status = 'gameover';
+  stopTimer();
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div style="font-size:32px;">💥</div>
+    <div style="margin-top:8px;">游戏结束</div>
+    <div class="overlay-sub">得分: ${state.score} 分 · 点击重新开始</div>
+  `;
+}
+
+// ========== 计时器管理 ==========
+function startTimer() {
+  stopTimer();
+  state.timer = setInterval(() => {
+    if (state.status === 'playing') {
+      update();
+      draw();
+    }
+  }, state.speed);
+}
+function stopTimer() {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+}
+function restartTimer() {
+  if (state.status === 'playing') {
+    stopTimer();
+    startTimer();
+  }
+}
+
+// ========== UI 更新 ==========
+function updateUI() {
+  scoreEl.textContent = state.score;
+  highScoreEl.textContent = state.highScore;
+}
+
+// ========== Canvas 渲染 ==========
+function draw() {
+  ctx.clearRect(0, 0, 400, 400);
+
+  // 画网格
+  ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= GRID_SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * CELL_SIZE, 0);
+    ctx.lineTo(i * CELL_SIZE, 400);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * CELL_SIZE);
+    ctx.lineTo(400, i * CELL_SIZE);
+    ctx.stroke();
+  }
+
+  // 画食物
+  if (state.food.x >= 0) {
+    const fx = state.food.x * CELL_SIZE + CELL_SIZE / 2;
+    const fy = state.food.y * CELL_SIZE + CELL_SIZE / 2;
+    // 果柄（叶子）
+    ctx.beginPath();
+    ctx.ellipse(fx + 4, fy - 7, 4, 3, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#66bb6a';
+    ctx.fill();
+    // 果子
+    ctx.beginPath();
+    ctx.arc(fx, fy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff5252';
+    ctx.fill();
+    ctx.shadowColor = 'rgba(255,82,82,0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // 高光
+    ctx.beginPath();
+    ctx.arc(fx - 2, fy - 2, 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fill();
+  }
+
+  // 画蛇
+  const len = state.snake.length;
+  for (let i = 0; i < len; i++) {
+    const seg = state.snake[i];
+    const x = seg.x * CELL_SIZE;
+    const y = seg.y * CELL_SIZE;
+    const hue = (i * 15 + state.eatCount * 10) % 360;
+
+    // 圆角蛇段
+    const padding = 1;
+    const radius = 4;
+    ctx.beginPath();
+    ctx.roundRect(x + padding, y + padding, CELL_SIZE - padding * 2, CELL_SIZE - padding * 2, radius);
+    ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+    ctx.fill();
+
+    // 蛇头 — 画眼睛
+    if (i === 0) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 6, 2, 0, Math.PI * 2);
+      ctx.arc(x + 14, y + 6, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#333';
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 6, 1, 0, Math.PI * 2);
+      ctx.arc(x + 14, y + 6, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Canvas roundRect polyfill（Safari 需要）
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    return this;
+  };
+}
+
+// ========== 游戏控制 ==========
+function startGame() {
+  if (state.status === 'waiting' || state.status === 'gameover') {
+    state.status = 'playing';
+    overlay.classList.add('hidden');
+    startTimer();
+  }
+}
+
+function resetGame() {
+  stopTimer();
+  initState();
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div>🐍 按任意方向键开始</div>
+    <div class="overlay-sub">或滑动屏幕</div>
+  `;
+  draw();
+}
+
+function togglePause() {
+  if (state.status === 'playing') {
+    state.status = 'paused';
+    stopTimer();
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <div>⏸️ 已暂停</div>
+      <div class="overlay-sub">按 P 键或点击继续</div>
+    `;
+    pauseBtn.textContent = '▶️ 继续';
+  } else if (state.status === 'paused') {
+    state.status = 'playing';
+    overlay.classList.add('hidden');
+    startTimer();
+    pauseBtn.textContent = '⏸️ 暂停';
+  }
+}
+
+// ========== 输入处理（键盘） ==========
+document.addEventListener('keydown', (e) => {
+  const key = e.key;
+  // 防止方向键滚动页面
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(key)) {
+    e.preventDefault();
+  }
+
+  // 暂停/继续 (P / Space)
+  if (key === 'p' || key === 'P' || key === ' ') {
+    if (state.status === 'playing' || state.status === 'paused') {
+      togglePause();
+    } else if (state.status === 'gameover') {
+      resetGame();
+    }
+    return;
+  }
+
+  // 方向键 & WASD
+  const dirMap = {
+    'ArrowUp':    { dx: 0, dy: -1 },  'w': { dx: 0, dy: -1 },
+    'ArrowDown':  { dx: 0, dy: 1 },   's': { dx: 0, dy: 1 },
+    'ArrowLeft':  { dx: -1, dy: 0 },  'a': { dx: -1, dy: 0 },
+    'ArrowRight': { dx: 1, dy: 0 },   'd': { dx: 1, dy: 0 },
+  };
+  const nd = dirMap[key];
+  if (nd) {
+    // 首次按键启动游戏
+    if (state.status === 'waiting') { startGame(); }
+    // 不允许 180° 掉头
+    if (state.status === 'playing') {
+      const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+      if (!isOpposite) {
+        state.nextDir = nd;
+      }
+    }
+  }
+});
+
+// ========== 按钮事件 ==========
+restartBtn.addEventListener('click', resetGame);
+pauseBtn.addEventListener('click', togglePause);
+overlay.addEventListener('click', startGame);
+
+// ========== 触控滑动 ==========
+let touchStartX = 0, touchStartY = 0;
+canvas.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: true });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // 最小滑动阈值
+
+  if (state.status === 'waiting') { startGame(); }
+  if (state.status !== 'playing') return;
+
+  let nd;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    nd = dx > 0 ? { dx: 1, dy: 0 } : { dx: -1, dy: 0 };
+  } else {
+    nd = dy > 0 ? { dx: 0, dy: 1 } : { dx: 0, dy: -1 };
+  }
+  const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+  if (!isOpposite) {
+    state.nextDir = nd;
+  }
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: false });
+
+// ========== 触屏检测 → 显示方向按钮 ==========
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  document.getElementById('dpad').style.display = 'block';
+}
+
+// 方向按钮事件（委托监听）
+document.getElementById('dpad').addEventListener('click', (e) => {
+  const btn = e.target.closest('.dpad-btn');
+  if (!btn) return;
+  const dirMap = {
+    up:    { dx: 0, dy: -1 },
+    down:  { dx: 0, dy: 1 },
+    left:  { dx: -1, dy: 0 },
+    right: { dx: 1, dy: 0 },
+  };
+  const nd = dirMap[btn.dataset.dir];
+  if (!nd) return;
+
+  if (state.status === 'waiting') { startGame(); }
+  if (state.status !== 'playing') return;
+
+  const isOpposite = (nd.dx === -state.direction.dx && nd.dy === -state.direction.dy);
+  if (!isOpposite) {
+    state.nextDir = nd;
+  }
+});
+
+// ========== 启动 ==========
+initState();
+draw();
+```
+
+- [ ] **Step 2: 验证游戏可玩**
+
+在浏览器中打开 `snake.html`，测试：
+- 按方向键开始游戏
+- 蛇正常移动、吃食物、变长
+- 撞墙/撞身 → Game Over
+- 重新开始按钮有效
+- 暂停/继续按钮有效
+- 分数正常累加
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "E:\Claude Code(cursor)"
+git add snake.html
+git commit -m "feat: implement snake game engine with movement, food, collision, scoring"
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 3: 速度渐变 & 最高分 & 细节打磨
+
+**Files:**
+- Modify: `E:\Claude Code(cursor)\snake.html`（代码已在 Task 2 中包含速度和最高分功能，此 Task 验证并做细节打磨）
+
+**Interfaces:**
+- Consumes: 完整游戏引擎
+- Produces: 经过打磨的最终版本
+
+- [ ] **Step 1: 验证速度渐变**
+
+开浏览器 DevTools Console，输入 `state.speed` 查看初始值（应为 150），连续吃 5 个食物后应变为 135。验证速度随分数提升而加快。
+
+- [ ] **Step 2: 验证最高分持久化**
+
+- 玩一局得 30 分
+- 刷新页面
+- 验证最高分显示为 30
+
+- [ ] **Step 3: 视觉微调**
+
+可选调整：
+- 蛇头眼睛位置与方向联动（当前固定在左上角，方向改变时眼睛位置不随之转动 — 简单实现可保留现状，不增加复杂度）
+- 检查移动端布局：`max-width: 100%` 是否限制 Canvas 宽度适配
+
+- [ ] **Step 4: 最终 Commit**
+
+```bash
+cd "E:\Claude Code(cursor)"
+git add snake.html
+git commit -m "chore: final polish and verification"
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
