@@ -152,6 +152,12 @@ canvas {
   color: #81c784;
 }
 
+/* ===== 食物 bounce 动画 ===== */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
 /* ===== 响应式 ===== */
 @media (max-width: 440px) {
   .game-container { padding: 16px 12px; }
