@@ -546,7 +546,10 @@ document.addEventListener('keydown', (e) => {
 // ========== 按钮事件 ==========
 restartBtn.addEventListener('click', resetGame);
 pauseBtn.addEventListener('click', togglePause);
-overlay.addEventListener('click', startGame);
+overlay.addEventListener('click', () => {
+  if (state.status === 'gameover') { resetGame(); }
+  else { startGame(); }
+});
 
 // ========== 触控滑动 ==========
 let touchStartX = 0, touchStartY = 0;
