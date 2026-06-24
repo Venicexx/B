@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐍 小蛇吃果子</title>
+<style>
+/* ===== 全局重置 & 背景 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  padding: 16px;
+}
+
+/* ===== 游戏卡片 ===== */
+.game-container {
+  background: #fff;
+  border-radius: 24px;
+  padding: 30px 24px 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+/* ===== 标题 & 分数 ===== */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+h1 {
+  font-size: 22px;
+  color: #2e7d32;
+  font-weight: 700;
+}
+.score-box {
+  background: #fff3e0;
+  padding: 6px 16px;
+  border-radius: 20px;
+  display: flex;
+  gap: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.score-box span { color: #e65100; }
+
+/* ===== Canvas 区 ===== */
+.canvas-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06);
+}
+canvas {
+  display: block;
+  width: 400px;
+  height: 400px;
+  max-width: 100%;
+  background: #f1f8e9;
+}
+
+/* ===== 按钮行 ===== */
+.btn-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.btn {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  touch-action: manipulation;
+}
+.btn:active { transform: scale(0.95); }
+.btn-green  { background: #4caf50; color: #fff; box-shadow: 0 3px 8px rgba(76,175,80,0.3); }
+.btn-orange { background: #ff9800; color: #fff; box-shadow: 0 3px 8px rgba(255,152,0,0.3); }
+
+/* ===== 方向按钮（移动端） ===== */
+.dpad {
+  display: none;  /* 默认隐藏，通过 JS 检测触屏后显示 */
+  margin-top: 16px;
+}
+.dpad-grid {
+  display: inline-grid;
+  grid-template-columns: 56px 56px 56px;
+  grid-template-rows: 56px 56px;
+  gap: 4px;
+  justify-content: center;
+}
+.dpad-btn {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: #a5d6a7;
+  color: #1b5e20;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  box-shadow: 0 3px 0 #81c784;
+  transition: transform 0.05s;
+}
+.dpad-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #81c784;
+}
+.dpad-empty { visibility: hidden; }
+
+/* ===== 覆盖层（等待/结束） ===== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(241,248,233,0.85);
+  backdrop-filter: blur(2px);
+  font-size: 20px;
+  font-weight: 600;
+  color: #2e7d32;
+  cursor: pointer;
+  transition: opacity 0.3s;
+}
+.overlay.hidden { opacity: 0; pointer-events: none; }
+.overlay-sub {
+  font-size: 14px;
+  font-weight: 400;
+  color: #558b2f;
+  margin-top: 8px;
+}
+
+/* ===== 底部签名 ===== */
+.footer {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #81c784;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 440px) {
+  .game-container { padding: 16px 12px; }
+  h1 { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<div class="game-container">
+  <div class="header">
+    <h1>🐍 小蛇吃果子</h1>
+    <div class="score-box">
+      <span id="score">0</span>
+      <span style="color:#999;font-weight:300;">|</span>
+      <span>🏆 <span id="highScore">0</span></span>
+    </div>
+  </div>
+
+  <div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <!-- 覆盖层 -->
+    <div id="overlay" class="overlay">
+      <div>🐍 按任意方向键开始</div>
+      <div class="overlay-sub">或滑动屏幕</div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-green" id="restartBtn">🔄 重新开始</button>
+    <button class="btn btn-orange" id="pauseBtn">⏸️ 暂停</button>
+  </div>
+
+  <!-- 移动端方向按钮 -->
+  <div class="dpad" id="dpad">
+    <div class="dpad-grid">
+      <div class="dpad-empty"></div>
+      <button class="dpad-btn" data-dir="up">↑</button>
+      <div class="dpad-empty"></div>
+      <button class="dpad-btn" data-dir="left">←</button>
+      <button class="dpad-btn" data-dir="down">↓</button>
+      <button class="dpad-btn" data-dir="right">→</button>
+    </div>
+  </div>
+
+  <div class="footer">开发者: 爸爸为你做的 ❤️</div>
+</div>
+
+<script>
+// ========== 游戏引擎 ==========
+// 后续 Task 在此填充
+function init() {
+  console.log('🐍 贪吃蛇已加载');
+}
+init();
+</script>
+</body>
+</html>
