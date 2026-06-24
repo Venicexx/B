@@ -394,7 +394,8 @@ function draw() {
   // 画食物
   if (state.food.x >= 0) {
     const fx = state.food.x * CELL_SIZE + CELL_SIZE / 2;
-    const fy = state.food.y * CELL_SIZE + CELL_SIZE / 2;
+    const time = Date.now() / 200;
+    const fy = state.food.y * CELL_SIZE + CELL_SIZE / 2 + Math.sin(time) * 3;
     // 果柄（叶子）
     ctx.beginPath();
     ctx.ellipse(fx + 4, fy - 7, 4, 3, 0.3, 0, Math.PI * 2);
@@ -404,7 +405,6 @@ function draw() {
     ctx.beginPath();
     ctx.arc(fx, fy, 7, 0, Math.PI * 2);
     ctx.fillStyle = '#ff5252';
-    ctx.fill();
     ctx.shadowColor = 'rgba(255,82,82,0.3)';
     ctx.shadowBlur = 4;
     ctx.fill();
@@ -509,12 +509,12 @@ function togglePause() {
 document.addEventListener('keydown', (e) => {
   const key = e.key;
   // 防止方向键滚动页面
-  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(key)) {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ', 'Enter'].includes(key)) {
     e.preventDefault();
   }
 
   // 暂停/继续 (P / Space)
-  if (key === 'p' || key === 'P' || key === ' ') {
+  if (key === 'p' || key === 'P' || key === ' ' || key === 'Enter') {
     if (state.status === 'playing' || state.status === 'paused') {
       togglePause();
     } else if (state.status === 'gameover') {
@@ -549,6 +549,7 @@ restartBtn.addEventListener('click', resetGame);
 pauseBtn.addEventListener('click', togglePause);
 overlay.addEventListener('click', () => {
   if (state.status === 'gameover') { resetGame(); }
+  else if (state.status === 'paused') { togglePause(); }
   else { startGame(); }
 });
 
