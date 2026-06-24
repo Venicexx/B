@@ -478,6 +478,7 @@ function startGame() {
 function resetGame() {
   stopTimer();
   initState();
+  pauseBtn.textContent = '⏸️ 暂停';
   overlay.classList.remove('hidden');
   overlay.innerHTML = `
     <div>🐍 按任意方向键开始</div>
